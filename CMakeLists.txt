@@ -12,16 +12,19 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 add_definitions("-Wall" "-g")
 
+# Add system libraries
+find_package(M)
+
 # Add dependencies
 add_subdirectory(vendor)
 
 # Add main executable
 add_executable(SimpleGLTF)
 target_sources(SimpleGLTF
-  INTERFACE core.h
-  PRIVATE core.c main.c
+  INTERFACE xmath.h core.h
+  PRIVATE xmath.c core.c main.c
 )
-target_link_libraries(SimpleGLTF glfw glad)
+target_link_libraries(SimpleGLTF glfw glad cgltf m)
 
 # Copy assets dir
 set(ASSETS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/assets")
