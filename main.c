@@ -12,11 +12,28 @@ int main() {
     return AppClose(status);
   }
 
+  Shader shader = LoadShader("assets/def_vs.glsl", "assets/def_fs.glsl");
+  if (shader.status != SUCCESS) {
+    return AppClose(shader.status);
+  }
+
+  Model model = LoadModel("assets/uwu.gltf");
+  if (model.status != SUCCESS) {
+    return AppClose(model.status);
+  }
+
+  model.transform = TransformIdentity();
+  model.shader = shader;
+
   while (!AppShouldClose()) {
     BeginFrame();
-    // App code
+    { // Render pass
+      RenderModel(model);
+    }
     EndFrame();
   }
 
+  DestroyShader(shader);
+  DestroyModel(model);
   return AppClose(SUCCESS);
 }
