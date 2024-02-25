@@ -4,6 +4,10 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#define CAMERA_DEFAULT_NEAR 0.1f
+#define CAMERA_DEFAULT_FAR 100.0f
+#define CAMERA_DEFAULT_FOV 70.0f
+
 typedef enum {
   SUCCESS,
   E_CANNOT_INIT_GLFW,
@@ -51,7 +55,11 @@ typedef struct {
 
 typedef struct {
   enum { CAMERA_PERSPECTIVE, CAMERA_ORTHO } mode;
-  Transform transform;
+  float near;
+  float far;
+  float fov;
+  Mat4 proj;
+  Transform view;
 } Camera;
 
 // Set global log level
@@ -83,6 +91,9 @@ Shader LoadShader(const char *vsPath, const char *fsPath);
 // Destroy a shader if needed.
 void DestroyShader(Shader shader);
 
+// Make a single plane
+Model MakePlane(float dim);
+
 // Load a GLTF model into memory decoding its data and uploading to the GPU.
 Model LoadModel(const char *path);
 
@@ -96,7 +107,10 @@ void DestroyPrimitive(Primitive primitive);
 void RenderModel(Model model);
 
 // Return a perspective camera looking at origin offset a little bit
-Camera MakeDefaultCamera();
+Camera MakeDefaultCamera(float aspectRatio);
+
+// Set a camera as current camera
+void SetCurrentCamera(Camera camera);
 
 // Load the entire file by name into memory
 char *LoadFileContents(const char *name);

@@ -2,6 +2,11 @@
 
 layout (location = 0) in vec3 inPos;
 
+uniform mat4 proj;
+uniform mat4 view;
+uniform mat4 model;
+
 void main() {
-  gl_Position = vec4(inPos, 1.0);
+  mat4 mvp = model * view * proj;
+  gl_Position = mvp * vec4(inPos, 1.0);
 }

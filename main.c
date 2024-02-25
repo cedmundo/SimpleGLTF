@@ -17,7 +17,7 @@ int main() {
     return AppClose(shader.status);
   }
 
-  Model model = LoadModel("assets/uwu.gltf");
+  Model model = MakePlane(0.5f); // LoadModel("assets/uwu.gltf");
   if (model.status != SUCCESS) {
     return AppClose(model.status);
   }

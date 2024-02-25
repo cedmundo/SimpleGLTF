@@ -26,6 +26,7 @@ typedef struct {
   int fpsCount;
   int curFPS;
   GLFWwindow *window;
+  Camera currentCamera;
   LogLevel logLevel;
 } App;
 
@@ -59,6 +60,8 @@ StatusCode AppInit(int window_width, int window_height,
     return E_CANNOT_LOAD_GL;
   }
 
+  app.currentCamera =
+      MakeDefaultCamera((float)window_width / (float)window_height);
   glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
   return SUCCESS;
 }
@@ -245,6 +248,50 @@ void DestroyShader(Shader shader) {
   }
 }
 
+Model MakePlane(float dim) {
+  Model model = {0};
+  model.primitivesCount = 1;
+  model.primitives = calloc(1, sizeof(Primitive));
+  Primitive *prim = model.primitives;
+
+  // a plane
+  // clang-format off
+  float vertices[] = {
+      // POSITIONS
+      dim,  dim,  0.0f,
+      dim,  -dim, 0.0f,
+      -dim, -dim, 0.0f,
+      -dim, dim,  0.0f,
+  };
+  // clang-format on
+  unsigned indices[] = {
+      0, 1, 3, // first triangle
+      1, 2, 3, // second triangle
+  };
+  prim->indicesCount = 6;
+
+  // upload model
+  glGenVertexArrays(1, &model.vao);
+  glGenBuffers(1, &prim->vbo);
+  glGenBuffers(1, &prim->ebo);
+
+  glBindVertexArray(model.vao);
+  glBindBuffer(GL_ARRAY_BUFFER, prim->vbo);
+  glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, prim->ebo);
+  glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices,
+               GL_STATIC_DRAW);
+
+  // position attribute
+  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void *)0);
+  glEnableVertexAttribArray(0);
+
+  glBindBuffer(GL_ARRAY_BUFFER, 0);
+  glBindVertexArray(0);
+  return model;
+}
+
 Model LoadModel(const char *path) {
   Model model = {0};
 
@@ -416,25 +463,48 @@ void DestroyPrimitive(Primitive primitive) {
 }
 
 void RenderModel(Model model) {
-  glUseProgram(model.shader.spId);
+  unsigned spid = model.shader.spId;
+  glUseProgram(spid);
   glBindVertexArray(model.vao);
+
+  int modelMat4Loc = glGetUniformLocation(spid, "model");
+  int viewMat4Loc = glGetUniformLocation(spid, "view");
+  int projMat4Loc = glGetUniformLocation(spid, "proj");
+
+  glUniformMatrix4fv(modelMat4Loc, 1, GL_FALSE, (GLfloat *)&model.transform);
+  glUniformMatrix4fv(viewMat4Loc, 1, GL_FALSE,
+                     (GLfloat *)&app.currentCamera.view);
+  glUniformMatrix4fv(projMat4Loc, 1, GL_FALSE,
+                     (GLfloat *)&app.currentCamera.proj);
+
   for (int i = 0; i < model.primitivesCount; i++) {
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, model.primitives[i].ebo);
     glDrawElements(GL_TRIANGLES, (GLsizei)model.primitives[i].indicesCount,
                    GL_UNSIGNED_INT, 0);
   }
   glBindVertexArray(0);
 }
 
-Camera MakeDefaultCamera() {
-  Transform t = TransformIdentity();
-  t = TransformTranslated(t, (Vec3){0});
-  t = TransformLookAt(t, (Vec3){0}, Vec3Up());
+Camera MakeDefaultCamera(float aspectRatio) {
+  Vec3 origin = (Vec3){0.0f, 0.0f, 5.0f};
+  Vec3 center = (Vec3){0.0f, 0.0f, 0.0f};
+  Transform view = TransformIdentity();
+  view = TransformTranslated(view, origin);
+  view = TransformLookAt(view, center, Vec3Up());
+  Mat4 proj = MakeProjPerspective(aspectRatio, CAMERA_DEFAULT_NEAR,
+                                  CAMERA_DEFAULT_FAR, CAMERA_DEFAULT_FOV);
 
   return (Camera){
       .mode = CAMERA_PERSPECTIVE,
-      .transform = t,
+      .near = CAMERA_DEFAULT_NEAR,
+      .far = CAMERA_DEFAULT_FAR,
+      .fov = CAMERA_DEFAULT_FOV,
+      .proj = proj,
+      .view = view,
   };
 }
+
+void SetCurrentCamera(Camera camera) { app.currentCamera = camera; }
 
 char *LoadFileContents(const char *name) {
   assert(name != NULL && "invalid arg name: cannot be NULL");
