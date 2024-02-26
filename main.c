@@ -27,7 +27,12 @@ int main() {
 
   while (!AppShouldClose()) {
     BeginFrame();
-    { // Render pass
+    {
+      // Update
+      model.transform.angles.y += 1.0f * GetDeltaTime();
+      model.transform.angles.x += 1.0f * GetDeltaTime();
+
+      // Render
       RenderModel(model);
     }
     EndFrame();

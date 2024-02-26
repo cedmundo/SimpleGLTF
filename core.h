@@ -90,6 +90,9 @@ int AppClose(StatusCode status);
 // Return true if app should be closed.
 bool AppShouldClose();
 
+// Return current delta time.
+float GetDeltaTime();
+
 // Start a frame
 void BeginFrame();
 

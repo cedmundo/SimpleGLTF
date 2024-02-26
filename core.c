@@ -125,6 +125,8 @@ bool AppShouldClose() {
   return glfwWindowShouldClose(app.window);
 }
 
+float GetDeltaTime() { return app.deltaTime; }
+
 void BeginFrame() {
   assert(app.window != NULL && "invalid state: app.window is not initialized");
   int width = 0;
