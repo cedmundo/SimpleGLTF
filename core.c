@@ -420,6 +420,7 @@ Model LoadModel(const char *path) {
 
         cgltf_buffer_view *attr_view = attr_accessor->buffer_view;
         cgltf_buffer *attr_buf = attr_view->buffer;
+
         glBindBuffer(GL_ARRAY_BUFFER, vbo);
         glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)attr_view->size,
                      attr_buf->data + attr_view->offset, GL_STATIC_DRAW);
@@ -450,7 +451,6 @@ Model LoadModel(const char *path) {
       destPrimitives[destPrimitiveIndex].vbo = vbo;
       destPrimitives[destPrimitiveIndex].ebo = ebo;
       destPrimitives[destPrimitiveIndex].indicesCount = indices_accessor->count;
-      destPrimitiveIndex += 1;
     }
   }
 
@@ -516,9 +516,11 @@ void RenderModel(Model model) {
   glUniformMatrix4fv(viewMat4Loc, 1, GL_FALSE, Mat4Raw(&viewMat));
   glUniformMatrix4fv(projMat4Loc, 1, GL_FALSE, Mat4Raw(&projMat));
   for (int i = 0; i < model.primitivesCount; i++) {
+    // IMPORTANT NOTE: Maybe assign a type GL_UNSIGNED_SHORT | GL_UNSIGNED_INT
+    // in case of getting a larger type at reading model.
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, model.primitives[i].ebo);
     glDrawElements(GL_TRIANGLES, (GLsizei)model.primitives[i].indicesCount,
-                   GL_UNSIGNED_INT, 0);
+                   GL_UNSIGNED_SHORT, 0);
   }
   glBindVertexArray(0);
 }
