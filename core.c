@@ -63,6 +63,9 @@ StatusCode AppInit(int window_width, int window_height,
   app.currentCamera =
       MakeDefaultCamera((float)window_width / (float)window_height);
   glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
+  glEnable(GL_DEPTH_TEST);
+  glDepthFunc(GL_LESS);
+
   return SUCCESS;
 }
 
@@ -147,7 +150,13 @@ void BeginFrame() {
 
   // Clear buffer and start frame
   glViewport(0, 0, width, height);
-  glClear(GL_COLOR_BUFFER_BIT);
+  glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+  // Update current camera
+  // TODO(cedmundo): Update camera may need to be its own proc
+  app.currentCamera.aspect = app.aspectRatio;
+  app.currentCamera.width = (float)width;
+  app.currentCamera.height = (float)height;
 }
 
 void EndFrame() {
@@ -248,7 +257,7 @@ void DestroyShader(Shader shader) {
   }
 }
 
-Model MakePlane(float dim) {
+Model MakeCube(float dim) {
   Model model = {0};
   model.primitivesCount = 1;
   model.primitives = calloc(1, sizeof(Primitive));
@@ -257,18 +266,43 @@ Model MakePlane(float dim) {
   // a plane
   // clang-format off
   float vertices[] = {
-      // POSITIONS
-      dim,  dim,  0.0f,
-      dim,  -dim, 0.0f,
-      -dim, -dim, 0.0f,
-      -dim, dim,  0.0f,
+    // POSITIONS
+    -dim, -dim,  dim, //0
+     dim, -dim,  dim, //1
+    -dim,  dim,  dim, //2
+     dim,  dim,  dim, //3
+    -dim, -dim, -dim, //4
+     dim, -dim, -dim, //5
+    -dim,  dim, -dim, //6
+     dim,  dim, -dim  //7
+  };
+  unsigned indices[] = {
+    //Top
+    2, 6, 7,
+    2, 3, 7,
+
+    //Bottom
+    0, 4, 5,
+    0, 1, 5,
+
+    //Left
+    0, 2, 6,
+    0, 4, 6,
+
+    //Right
+    1, 3, 7,
+    1, 5, 7,
+
+    //Front
+    0, 2, 3,
+    0, 1, 3,
+
+    //Back
+    4, 6, 7,
+    4, 5, 7
   };
   // clang-format on
-  unsigned indices[] = {
-      0, 1, 3, // first triangle
-      1, 2, 3, // second triangle
-  };
-  prim->indicesCount = 6;
+  prim->indicesCount = 36;
 
   // upload model
   glGenVertexArrays(1, &model.vao);
@@ -467,16 +501,18 @@ void RenderModel(Model model) {
   glUseProgram(spid);
   glBindVertexArray(model.vao);
 
+  Camera camera = app.currentCamera;
+  Mat4 viewMat = TransformGetModelMatrix(camera.transform);
+  Mat4 projMat = CameraGetProjMatrix(camera);
+  Mat4 modelMat = TransformGetModelMatrix(model.transform);
+
   int modelMat4Loc = glGetUniformLocation(spid, "model");
   int viewMat4Loc = glGetUniformLocation(spid, "view");
   int projMat4Loc = glGetUniformLocation(spid, "proj");
 
-  glUniformMatrix4fv(modelMat4Loc, 1, GL_FALSE, (GLfloat *)&model.transform);
-  glUniformMatrix4fv(viewMat4Loc, 1, GL_FALSE,
-                     (GLfloat *)&app.currentCamera.view);
-  glUniformMatrix4fv(projMat4Loc, 1, GL_FALSE,
-                     (GLfloat *)&app.currentCamera.proj);
-
+  glUniformMatrix4fv(modelMat4Loc, 1, GL_FALSE, Mat4Raw(&modelMat));
+  glUniformMatrix4fv(viewMat4Loc, 1, GL_FALSE, Mat4Raw(&viewMat));
+  glUniformMatrix4fv(projMat4Loc, 1, GL_FALSE, Mat4Raw(&projMat));
   for (int i = 0; i < model.primitivesCount; i++) {
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, model.primitives[i].ebo);
     glDrawElements(GL_TRIANGLES, (GLsizei)model.primitives[i].indicesCount,
@@ -485,23 +521,31 @@ void RenderModel(Model model) {
   glBindVertexArray(0);
 }
 
-Camera MakeDefaultCamera(float aspectRatio) {
-  Vec3 origin = (Vec3){0.0f, 0.0f, 5.0f};
-  Vec3 center = (Vec3){0.0f, 0.0f, 0.0f};
-  Transform view = TransformIdentity();
-  view = TransformTranslated(view, origin);
-  view = TransformLookAt(view, center, Vec3Up());
-  Mat4 proj = MakeProjPerspective(aspectRatio, CAMERA_DEFAULT_NEAR,
-                                  CAMERA_DEFAULT_FAR, CAMERA_DEFAULT_FOV);
+Mat4 CameraGetProjMatrix(Camera camera) {
+  assert((camera.mode == CAMERA_MODE_PERSPECTIVE_PROJ ||
+          camera.mode == CAMERA_MODE_ORTHO_PROJ) &&
+         "invalid state: unknown camera mode");
+  if (camera.mode == CAMERA_MODE_PERSPECTIVE_PROJ) {
+    return Mat4MakePerspective(camera.fov, camera.aspect, camera.near,
+                               camera.far);
+  }
 
-  return (Camera){
-      .mode = CAMERA_PERSPECTIVE,
-      .near = CAMERA_DEFAULT_NEAR,
-      .far = CAMERA_DEFAULT_FAR,
-      .fov = CAMERA_DEFAULT_FOV,
-      .proj = proj,
-      .view = view,
-  };
+  // FIXME(cedmundo): we might need to use -camera.width/2 and camera.width/2
+  return Mat4MakeOrtho(0, camera.width, 0, camera.height, camera.near,
+                       camera.far);
+}
+
+Camera MakeDefaultCamera() {
+  Camera camera = {0};
+  camera.mode = CAMERA_MODE_PERSPECTIVE_PROJ;
+  camera.transform = MakeTransform();
+  camera.transform.origin = (Vec3){0.0f, 0.0f, -10.0f};
+  camera.front = Vec3Forward;
+  camera.up = Vec3Up;
+  camera.fov = 45.0f;
+  camera.near = 0.1f;
+  camera.far = 100.0f;
+  return camera;
 }
 
 void SetCurrentCamera(Camera camera) { app.currentCamera = camera; }

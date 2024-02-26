@@ -1,5 +1,5 @@
 #pragma once
-#include "xmath.h"
+#include "xmath/transform.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -54,12 +54,23 @@ typedef struct {
 } Model;
 
 typedef struct {
-  enum { CAMERA_PERSPECTIVE, CAMERA_ORTHO } mode;
+  enum {
+    CAMERA_MODE_ORTHO_PROJ,
+    CAMERA_MODE_PERSPECTIVE_PROJ,
+  } mode;
+  Vec3 front;
+  Vec3 up;
+  Vec3 right;
+  Vec3 worldUp;
+
+  float fov;
+  float width;
+  float height;
+  float aspect;
   float near;
   float far;
-  float fov;
-  Mat4 proj;
-  Transform view;
+
+  Transform transform;
 } Camera;
 
 // Set global log level
@@ -92,7 +103,7 @@ Shader LoadShader(const char *vsPath, const char *fsPath);
 void DestroyShader(Shader shader);
 
 // Make a single plane
-Model MakePlane(float dim);
+Model MakeCube(float dim);
 
 // Load a GLTF model into memory decoding its data and uploading to the GPU.
 Model LoadModel(const char *path);
@@ -107,7 +118,10 @@ void DestroyPrimitive(Primitive primitive);
 void RenderModel(Model model);
 
 // Return a perspective camera looking at origin offset a little bit
-Camera MakeDefaultCamera(float aspectRatio);
+Camera MakeDefaultCamera();
+
+// Return the *updated* projection matrix of a camera.
+Mat4 CameraGetProjMatrix(Camera camera);
 
 // Set a camera as current camera
 void SetCurrentCamera(Camera camera);

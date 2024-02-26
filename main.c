@@ -17,12 +17,12 @@ int main() {
     return AppClose(shader.status);
   }
 
-  Model model = MakePlane(0.5f); // LoadModel("assets/uwu.gltf");
+  Model model = MakeCube(0.5f); // LoadModel("assets/uwu.gltf");
   if (model.status != SUCCESS) {
     return AppClose(model.status);
   }
 
-  model.transform = TransformIdentity();
+  model.transform = MakeTransform();
   model.shader = shader;
 
   while (!AppShouldClose()) {
