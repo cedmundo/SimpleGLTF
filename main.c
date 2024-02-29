@@ -1,4 +1,6 @@
+#include "camera.h"
 #include "core.h"
+#include "model.h"
 
 #define WINDOW_WIDTH 500
 #define WINDOW_HEIGTH 500
@@ -25,15 +27,17 @@ int main() {
   model.transform = MakeTransform();
   model.shader = shader;
 
+  Camera camera = MakeDefaultCamera();
   while (!AppShouldClose()) {
     BeginFrame();
     {
       // Update
+      UpdateCamera(&camera);
       model.transform.angles.y += 1.0f * GetDeltaTime();
       model.transform.angles.x += 1.0f * GetDeltaTime();
 
       // Render
-      RenderModel(model);
+      RenderModel(model, camera);
     }
     EndFrame();
   }

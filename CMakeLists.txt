@@ -24,8 +24,8 @@ add_subdirectory(xmath)
 # Add main executable
 add_executable(SimpleGLTF)
 target_sources(SimpleGLTF
-  INTERFACE core.h
-  PRIVATE core.c main.c
+  INTERFACE core.h camera.h model.h
+  PRIVATE core.c camera.c model.c main.c
 )
 target_link_libraries(SimpleGLTF glfw glad cgltf xmath)
 

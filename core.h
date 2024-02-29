@@ -4,10 +4,6 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#define CAMERA_DEFAULT_NEAR 0.1f
-#define CAMERA_DEFAULT_FAR 100.0f
-#define CAMERA_DEFAULT_FOV 70.0f
-
 typedef enum {
   SUCCESS,
   E_CANNOT_INIT_GLFW,
@@ -29,49 +25,6 @@ typedef enum {
   LOG_ERROR,
   LOG_LEVEL_COUNT
 } LogLevel;
-
-typedef struct {
-  unsigned spId;
-  StatusCode status;
-} Shader;
-
-typedef struct {
-  size_t indicesCount;
-  unsigned vbo;
-  unsigned ebo;
-} Primitive;
-
-typedef struct {
-  char **buffersData;
-  size_t buffersCount;
-  Primitive *primitives;
-  size_t primitivesCount;
-  unsigned vao;
-
-  Shader shader;
-  Transform transform;
-  StatusCode status;
-} Model;
-
-typedef struct {
-  enum {
-    CAMERA_MODE_ORTHO_PROJ,
-    CAMERA_MODE_PERSPECTIVE_PROJ,
-  } mode;
-  Vec3 front;
-  Vec3 up;
-  Vec3 right;
-  Vec3 worldUp;
-
-  float fov;
-  float width;
-  float height;
-  float aspect;
-  float near;
-  float far;
-
-  Transform transform;
-} Camera;
 
 // Set global log level
 void AppSetLogLevel(LogLevel level);
@@ -99,35 +52,8 @@ void BeginFrame();
 // Commits a frame, poll events and swap buffers
 void EndFrame();
 
-// Load, compile and link a shader program using a fragment and vertex shaders.
-Shader LoadShader(const char *vsPath, const char *fsPath);
-
-// Destroy a shader if needed.
-void DestroyShader(Shader shader);
-
-// Make a single plane
-Model MakeCube(float dim);
-
-// Load a GLTF model into memory decoding its data and uploading to the GPU.
-Model LoadModel(const char *path);
-
-// Destroy all contents of a model.
-void DestroyModel(Model model);
-
-// Delete all related buffer arrays of primitive
-void DestroyPrimitive(Primitive primitive);
-
-// Display a model in the GPU
-void RenderModel(Model model);
-
-// Return a perspective camera looking at origin offset a little bit
-Camera MakeDefaultCamera();
-
-// Return the *updated* projection matrix of a camera.
-Mat4 CameraGetProjMatrix(Camera camera);
-
-// Set a camera as current camera
-void SetCurrentCamera(Camera camera);
+// Return the size of the main viewport in pixels
+Vec2 GetViewportSize();
 
 // Load the entire file by name into memory
 char *LoadFileContents(const char *name);
