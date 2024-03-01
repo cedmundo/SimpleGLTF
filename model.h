@@ -11,8 +11,18 @@ typedef struct {
   StatusCode status;
 } Shader;
 
+// A single vertex representing the attributes required by the shader
+typedef struct {
+  Vec3 pos;
+  Vec3 nor;
+  Vec2 uvs;
+  Vec4 col;
+} Vertex;
+
 // Primitive reflects a single mesh instance of a model
 typedef struct {
+  Vertex *vertices;
+  size_t verticesCount;
   size_t indicesCount;
   unsigned vbo;
   unsigned ebo;

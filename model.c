@@ -4,8 +4,6 @@
 #define CGLTF_IMPLEMENTATION
 #include "cgltf.h"
 
-void UploadAttribute(Mesh *mesh, int index, cgltf_attribute attribute,
-                     cgltf_accessor *attr_accessor);
 StatusCode UploadIndices(Mesh *mesh, cgltf_accessor *indices_accessor);
 
 Shader LoadShader(const char *vsPath, const char *fsPath) {
@@ -223,15 +221,26 @@ Model LoadModel(const char *path) {
       Mesh *mesh = meshes + meshIndex;
       cgltf_primitive primitive = data->meshes[mi].primitives[pi];
 
-      // Gen buffers for mesh main buffer
-      glGenBuffers(1, &mesh->vbo);
-      glBindBuffer(GL_ARRAY_BUFFER, mesh->vbo);
+      char *pos_buffer = NULL;
+      size_t pos_stride = 0;
+
+      char *nor_buffer = NULL;
+      size_t nor_stride = 0;
+
+      char *uvs_buffer = NULL;
+      size_t uvs_stride = 0;
+
+      char *col_buffer = NULL;
+      size_t col_stride = 0;
 
       // Load model attributes (position, normals, color, uvs, etc)
       for (size_t ai = 0; ai < primitive.attributes_count; ai++) {
         cgltf_attribute attribute = primitive.attributes[ai];
+        cgltf_accessor *attr_accessor = attribute.data;
+        cgltf_buffer_view *attr_view = attr_accessor->buffer_view;
+        cgltf_buffer *attr_buf = attr_view->buffer;
+
         if (attribute.type == cgltf_attribute_type_position) {
-          cgltf_accessor *attr_accessor = attribute.data;
           if (attr_accessor->component_type != cgltf_component_type_r_32f ||
               attr_accessor->type != cgltf_type_vec3) {
             Log(LOG_WARN,
@@ -242,7 +251,11 @@ Model LoadModel(const char *path) {
             return model;
           }
 
-          UploadAttribute(mesh, 0, attribute, attr_accessor);
+          pos_buffer = attr_buf->data + attr_view->offset;
+          pos_stride = attr_accessor->stride;
+          // Important: positions are the same as vertex count, so do not
+          // remove from here.
+          mesh->verticesCount = attr_accessor->count;
         } else if (attribute.type == cgltf_attribute_type_color) {
           cgltf_accessor *attr_accessor = attribute.data;
           if (attr_accessor->component_type != cgltf_component_type_r_32f ||
@@ -255,7 +268,8 @@ Model LoadModel(const char *path) {
             return model;
           }
 
-          UploadAttribute(mesh, 1, attribute, attr_accessor);
+          col_buffer = attr_buf->data + attr_view->offset;
+          col_stride = attr_accessor->stride;
         } else if (attribute.type == cgltf_attribute_type_texcoord) {
           cgltf_accessor *attr_accessor = attribute.data;
           if (attr_accessor->component_type != cgltf_component_type_r_32f ||
@@ -268,7 +282,8 @@ Model LoadModel(const char *path) {
             return model;
           }
 
-          UploadAttribute(mesh, 2, attribute, attr_accessor);
+          uvs_buffer = attr_buf->data + attr_view->offset;
+          uvs_stride = attr_accessor->stride;
         } else if (attribute.type == cgltf_attribute_type_normal) {
           cgltf_accessor *attr_accessor = attribute.data;
           if (attr_accessor->component_type != cgltf_component_type_r_32f ||
@@ -281,16 +296,65 @@ Model LoadModel(const char *path) {
             return model;
           }
 
-          UploadAttribute(mesh, 3, attribute, attr_accessor);
+          nor_buffer = attr_buf->data + attr_view->offset;
+          nor_stride = attr_accessor->stride;
         } else {
           Log(LOG_WARN,
               "ignoring attribute #%d ,type %d in file %s (not supported)", ai,
               attribute.type, path);
+          continue;
+        }
+      }
+
+      if (pos_buffer == NULL) {
+        Log(LOG_ERROR, "There is no positions for the vertices");
+        return model;
+      }
+
+      // Allocate space for all vertices in the mesh
+      mesh->vertices = calloc(mesh->verticesCount, sizeof(Vertex));
+      for (size_t vi = 0; vi < mesh->verticesCount; vi++) {
+        mesh->vertices[vi].pos = *((Vec3 *)(pos_buffer + pos_stride * vi));
+
+        if (nor_buffer != NULL) {
+          mesh->vertices[vi].nor = *((Vec3 *)(nor_buffer + nor_stride * vi));
         }
 
-        // TODO(cedmundo): check if buffer is not the same for all attributes
-        // and post a warning then return an error.
+        if (uvs_buffer != NULL) {
+          mesh->vertices[vi].uvs = *((Vec2 *)(uvs_buffer + uvs_stride * vi));
+        }
+
+        if (col_buffer != NULL) {
+          mesh->vertices[vi].col = *((Vec4 *)(col_buffer + col_stride * vi));
+        }
       }
+
+      // Gen buffers for mesh main buffer
+      glGenBuffers(1, &mesh->vbo);
+      glBindBuffer(GL_ARRAY_BUFFER, mesh->vbo);
+      glBufferData(GL_ARRAY_BUFFER,
+                   (GLsizeiptr)(mesh->verticesCount * sizeof(Vertex)),
+                   mesh->vertices, GL_STATIC_DRAW);
+
+      // Position attribute
+      glEnableVertexAttribArray(0);
+      glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex),
+                            (void *)offsetof(Vertex, pos));
+
+      // Normal attribute
+      glEnableVertexAttribArray(1);
+      glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex),
+                            (void *)offsetof(Vertex, nor));
+
+      // TexCoord attribute
+      glEnableVertexAttribArray(2);
+      glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex),
+                            (void *)offsetof(Vertex, uvs));
+
+      // Color attribute
+      glEnableVertexAttribArray(3);
+      glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex),
+                            (void *)offsetof(Vertex, col));
 
       // Load model indices
       cgltf_accessor *indices_accessor = primitive.indices;
@@ -317,20 +381,6 @@ Model LoadModel(const char *path) {
   return model;
 }
 
-void UploadAttribute(Mesh *mesh, int index, cgltf_attribute attribute,
-                     cgltf_accessor *attr_accessor) {
-  cgltf_buffer_view *attr_view = attr_accessor->buffer_view;
-  cgltf_buffer *attr_buf = attr_view->buffer;
-
-  char *buffer_start = attr_buf->data + attr_view->offset;
-  glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)attr_view->size, buffer_start,
-               GL_STATIC_DRAW);
-  glEnableVertexAttribArray(index);
-  glVertexAttribPointer(
-      index, (GLsizei)cgltf_num_components(attr_accessor->type), GL_FLOAT,
-      GL_FALSE, (GLsizei)attr_accessor->stride, NULL);
-}
-
 StatusCode UploadIndices(Mesh *mesh, cgltf_accessor *indices_accessor) {
   unsigned ebo = 0;
   glGenBuffers(1, &ebo);
@@ -338,6 +388,7 @@ StatusCode UploadIndices(Mesh *mesh, cgltf_accessor *indices_accessor) {
     return E_CANNOT_LOAD_FILE;
   }
 
+  // TODO(cedmundo): copy indices
   cgltf_buffer_view *indices_view = indices_accessor->buffer_view;
   cgltf_buffer *indices_buffer = indices_view->buffer;
   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
