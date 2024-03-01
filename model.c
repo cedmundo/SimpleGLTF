@@ -4,6 +4,9 @@
 #define CGLTF_IMPLEMENTATION
 #include "cgltf.h"
 
+StatusCode UploadIndices(Mesh *mesh, cgltf_accessor *indices_accessor);
+StatusCode UploadPositionAttribute(Mesh *mesh, cgltf_attribute attribute);
+
 Shader LoadShader(const char *vsPath, const char *fsPath) {
   Shader shader = {0};
   int glStatus = 0;
@@ -98,9 +101,9 @@ void DestroyShader(Shader shader) {
 
 Model MakeCube(float dim) {
   Model model = {0};
-  model.primitivesCount = 1;
-  model.primitives = calloc(1, sizeof(Primitive));
-  Primitive *prim = model.primitives;
+  model.meshesCount = 1;
+  model.meshes = calloc(1, sizeof(Mesh));
+  Mesh *mesh = model.meshes;
 
   // a plane
   // clang-format off
@@ -141,18 +144,18 @@ Model MakeCube(float dim) {
     4, 5, 7
   };
   // clang-format on
-  prim->indicesCount = 36;
+  mesh->indicesCount = 36;
 
   // upload model
   glGenVertexArrays(1, &model.vao);
-  glGenBuffers(1, &prim->vbo);
-  glGenBuffers(1, &prim->ebo);
+  glGenBuffers(1, &mesh->vbo);
+  glGenBuffers(1, &mesh->ebo);
 
   glBindVertexArray(model.vao);
-  glBindBuffer(GL_ARRAY_BUFFER, prim->vbo);
+  glBindBuffer(GL_ARRAY_BUFFER, mesh->vbo);
   glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
 
-  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, prim->ebo);
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mesh->ebo);
   glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices,
                GL_STATIC_DRAW);
 
@@ -195,107 +198,71 @@ Model LoadModel(const char *path) {
     return model;
   }
 
-  // Copy buffer data into internal structure in Model so we can bind them later
-  size_t buffersCount = data->buffers_count;
-  char **buffersData = calloc(buffersCount, sizeof(char *));
-  if (buffersData == NULL) {
-    model.status = E_OUT_OF_MEMORY;
-    Log(LOG_ERROR, "error loading file: %s (out of memory), result: %d", path,
-        result);
-    return model;
-  }
-
-  for (size_t i = 0; i < buffersCount; i++) {
-    cgltf_buffer buffer = data->buffers[i];
-    buffersData[i] = calloc(buffer.size, sizeof(char));
-    assert(memcpy(buffersData[i], buffer.data, buffer.size) == buffersData[i]);
-  }
-
   // Bind each accessor as VertexAttrib
   unsigned vao = 0;
   glGenVertexArrays(1, &vao);
   glBindVertexArray(vao);
 
-  size_t primitivesCount = 0;
+  size_t meshesCount = 0;
   for (size_t i = 0; i < data->meshes_count; i++) {
-    primitivesCount += data->meshes[i].primitives_count;
+    meshesCount += data->meshes[i].primitives_count;
   }
 
-  Primitive *destPrimitives = calloc(primitivesCount, sizeof(Primitive));
-  if (destPrimitives == NULL) {
+  Mesh *meshes = calloc(meshesCount, sizeof(Mesh));
+  if (meshes == NULL) {
     model.status = E_OUT_OF_MEMORY;
     Log(LOG_ERROR, "error loading file: %s (out of memory), result: %d", path,
         result);
     return model;
   }
 
-  size_t destPrimitiveIndex = 0;
+  size_t meshIndex = 0;
   for (size_t mi = 0; mi < data->meshes_count; mi++) {
     for (size_t pi = 0; pi < data->meshes[mi].primitives_count; pi++) {
-      cgltf_primitive srcPrimitive = data->meshes[mi].primitives[pi];
+      Mesh *mesh = meshes + meshIndex;
+      cgltf_primitive primitive = data->meshes[mi].primitives[pi];
 
-      unsigned vbo = 0;
-      glGenBuffers(1, &vbo);
+      // Gen buffers for mesh main buffer
+      glGenBuffers(1, &mesh->vbo);
 
       // Load model attributes (position, normals, color, uvs, etc)
-      for (size_t ai = 0; ai < srcPrimitive.attributes_count; ai++) {
-        cgltf_attribute attribute = srcPrimitive.attributes[ai];
-        if (attribute.type != cgltf_attribute_type_position) {
-          Log(LOG_WARN, "ignoring attribute #%d in file %s (not position)", ai,
+      for (size_t ai = 0; ai < primitive.attributes_count; ai++) {
+        cgltf_attribute attribute = primitive.attributes[ai];
+        if (attribute.type == cgltf_attribute_type_position) {
+          model.status = UploadPositionAttribute(mesh, attribute);
+          if (model.status != SUCCESS) {
+            Log(LOG_WARN,
+                "ignoring position attribute #%d in file %s (not a vec3 of "
+                "floats)",
+                ai, path);
+            return model;
+          }
+        } else {
+          Log(LOG_WARN, "ignoring attribute #%d in file %s (not supported)", ai,
               path);
-          continue;
         }
 
-        cgltf_accessor *attr_accessor = attribute.data;
-        if (attr_accessor->component_type != cgltf_component_type_r_32f ||
-            attr_accessor->type != cgltf_type_vec3) {
-          Log(LOG_WARN,
-              "ignoring attribute #%d in file %s (not a vec3 of floats)", ai,
-              path);
-          continue;
-        }
-
-        cgltf_buffer_view *attr_view = attr_accessor->buffer_view;
-        cgltf_buffer *attr_buf = attr_view->buffer;
-
-        glBindBuffer(GL_ARRAY_BUFFER, vbo);
-        glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)attr_view->size,
-                     attr_buf->data + attr_view->offset, GL_STATIC_DRAW);
-        glEnableVertexAttribArray(0);
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), 0);
         break;
       }
 
       // Load model indices
-      unsigned ebo = 0;
-      glGenBuffers(1, &ebo);
-      cgltf_accessor *indices_accessor = srcPrimitive.indices;
-      if (indices_accessor->type != cgltf_type_scalar) {
-        model.status = E_CANNOT_LOAD_FILE;
+      cgltf_accessor *indices_accessor = primitive.indices;
+      model.status = UploadIndices(mesh, indices_accessor);
+      if (model.status != SUCCESS) {
         Log(LOG_ERROR,
             "invalid index array in file %s (not a buffer view of scalars)",
             path);
         return model;
       }
 
-      cgltf_buffer_view *indices_view = indices_accessor->buffer_view;
-      cgltf_buffer *indices_buffer = indices_view->buffer;
-      glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
-      glBufferData(GL_ELEMENT_ARRAY_BUFFER, (GLsizeiptr)indices_view->size,
-                   indices_buffer->data + indices_view->offset, GL_STATIC_DRAW);
-
-      // bind arrays for each primitive
-      destPrimitives[destPrimitiveIndex].vbo = vbo;
-      destPrimitives[destPrimitiveIndex].ebo = ebo;
-      destPrimitives[destPrimitiveIndex].indicesCount = indices_accessor->count;
+      // Next mesh
+      meshIndex++;
     }
   }
 
   // Collect evereything and return it so we can release it when destroying
-  model.buffersCount = buffersCount;
-  model.buffersData = buffersData;
-  model.primitivesCount = primitivesCount;
-  model.primitives = destPrimitives;
+  model.meshesCount = meshesCount;
+  model.meshes = meshes;
   model.vao = vao;
 
   glBindVertexArray(0);
@@ -303,21 +270,49 @@ Model LoadModel(const char *path) {
   return model;
 }
 
-void DestroyModel(Model model) {
-  if (model.primitives != NULL) {
-    for (int i = 0; i < model.primitivesCount; i++) {
-      DestroyPrimitive(model.primitives[i]);
-    }
-
-    free(model.primitives);
+StatusCode UploadPositionAttribute(Mesh *mesh, cgltf_attribute attribute) {
+  cgltf_accessor *attr_accessor = attribute.data;
+  if (attr_accessor->component_type != cgltf_component_type_r_32f ||
+      attr_accessor->type != cgltf_type_vec3) {
+    return E_CANNOT_LOAD_FILE;
   }
 
-  if (model.buffersData != NULL) {
-    for (int i = 0; i < model.buffersCount; i++) {
-      free(model.buffersData[i]);
+  cgltf_buffer_view *attr_view = attr_accessor->buffer_view;
+  cgltf_buffer *attr_buf = attr_view->buffer;
+
+  glBindBuffer(GL_ARRAY_BUFFER, mesh->vbo);
+  glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)attr_view->size,
+               attr_buf->data + attr_view->offset, GL_STATIC_DRAW);
+  glEnableVertexAttribArray(0);
+  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), 0);
+  return SUCCESS;
+}
+
+StatusCode UploadIndices(Mesh *mesh, cgltf_accessor *indices_accessor) {
+  unsigned ebo = 0;
+  glGenBuffers(1, &ebo);
+  if (indices_accessor->type != cgltf_type_scalar) {
+    return E_CANNOT_LOAD_FILE;
+  }
+
+  cgltf_buffer_view *indices_view = indices_accessor->buffer_view;
+  cgltf_buffer *indices_buffer = indices_view->buffer;
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+  glBufferData(GL_ELEMENT_ARRAY_BUFFER, (GLsizeiptr)indices_view->size,
+               indices_buffer->data + indices_view->offset, GL_STATIC_DRAW);
+
+  mesh->ebo = ebo;
+  mesh->indicesCount = indices_accessor->count;
+  return SUCCESS;
+}
+
+void DestroyModel(Model model) {
+  if (model.meshes != NULL) {
+    for (int i = 0; i < model.meshesCount; i++) {
+      DestroyMesh(model.meshes[i]);
     }
 
-    free(model.buffersData);
+    free(model.meshes);
   }
 
   if (model.vao != 0) {
@@ -325,13 +320,13 @@ void DestroyModel(Model model) {
   }
 }
 
-void DestroyPrimitive(Primitive primitive) {
-  if (primitive.ebo != 0) {
-    glDeleteBuffers(1, &primitive.ebo);
+void DestroyMesh(Mesh mesh) {
+  if (mesh.ebo != 0) {
+    glDeleteBuffers(1, &mesh.ebo);
   }
 
-  if (primitive.vbo != 0) {
-    glDeleteBuffers(1, &primitive.vbo);
+  if (mesh.vbo != 0) {
+    glDeleteBuffers(1, &mesh.vbo);
   }
 }
 
@@ -351,11 +346,11 @@ void RenderModel(Model model, Camera camera) {
   glUniformMatrix4fv(modelMat4Loc, 1, GL_FALSE, Mat4Raw(&modelMat));
   glUniformMatrix4fv(viewMat4Loc, 1, GL_FALSE, Mat4Raw(&viewMat));
   glUniformMatrix4fv(projMat4Loc, 1, GL_FALSE, Mat4Raw(&projMat));
-  for (int i = 0; i < model.primitivesCount; i++) {
+  for (int i = 0; i < model.meshesCount; i++) {
     // IMPORTANT NOTE: Maybe assign a type GL_UNSIGNED_SHORT | GL_UNSIGNED_INT
     // in case of getting a larger type at reading model.
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, model.primitives[i].ebo);
-    glDrawElements(GL_TRIANGLES, (GLsizei)model.primitives[i].indicesCount,
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, model.meshes[i].ebo);
+    glDrawElements(GL_TRIANGLES, (GLsizei)model.meshes[i].indicesCount,
                    GL_UNSIGNED_SHORT, 0);
   }
   glBindVertexArray(0);

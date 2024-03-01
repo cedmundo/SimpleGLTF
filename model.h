@@ -16,14 +16,12 @@ typedef struct {
   size_t indicesCount;
   unsigned vbo;
   unsigned ebo;
-} Primitive;
+} Mesh;
 
 // Model wraps a mesh with a material, a transform and its buffers.
 typedef struct {
-  char **buffersData;
-  size_t buffersCount;
-  Primitive *primitives;
-  size_t primitivesCount;
+  Mesh *meshes;
+  size_t meshesCount;
   unsigned vao;
 
   Shader shader;
@@ -46,8 +44,8 @@ Model LoadModel(const char *path);
 // Destroy all contents of a model.
 void DestroyModel(Model model);
 
-// Delete all related buffer arrays of primitive
-void DestroyPrimitive(Primitive primitive);
+// Delete all related buffer arrays of mesh
+void DestroyMesh(Mesh mesh);
 
 // Render a model from the point of view of given camera
 void RenderModel(Model model, Camera camera);
