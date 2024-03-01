@@ -4,8 +4,9 @@
 #define CGLTF_IMPLEMENTATION
 #include "cgltf.h"
 
+void UploadAttribute(Mesh *mesh, int index, cgltf_attribute attribute,
+                     cgltf_accessor *attr_accessor);
 StatusCode UploadIndices(Mesh *mesh, cgltf_accessor *indices_accessor);
-StatusCode UploadPositionAttribute(Mesh *mesh, cgltf_attribute attribute);
 
 Shader LoadShader(const char *vsPath, const char *fsPath) {
   Shader shader = {0};
@@ -224,25 +225,71 @@ Model LoadModel(const char *path) {
 
       // Gen buffers for mesh main buffer
       glGenBuffers(1, &mesh->vbo);
+      glBindBuffer(GL_ARRAY_BUFFER, mesh->vbo);
 
       // Load model attributes (position, normals, color, uvs, etc)
       for (size_t ai = 0; ai < primitive.attributes_count; ai++) {
         cgltf_attribute attribute = primitive.attributes[ai];
         if (attribute.type == cgltf_attribute_type_position) {
-          model.status = UploadPositionAttribute(mesh, attribute);
-          if (model.status != SUCCESS) {
+          cgltf_accessor *attr_accessor = attribute.data;
+          if (attr_accessor->component_type != cgltf_component_type_r_32f ||
+              attr_accessor->type != cgltf_type_vec3) {
             Log(LOG_WARN,
-                "ignoring position attribute #%d in file %s (not a vec3 of "
-                "floats)",
-                ai, path);
+                "error loading pos attribute #%d, type %d in file %s (not "
+                "a vec3 of floats)",
+                ai, attribute.type, path);
+            model.status = E_CANNOT_LOAD_FILE;
             return model;
           }
+
+          UploadAttribute(mesh, 0, attribute, attr_accessor);
+        } else if (attribute.type == cgltf_attribute_type_color) {
+          cgltf_accessor *attr_accessor = attribute.data;
+          if (attr_accessor->component_type != cgltf_component_type_r_32f ||
+              attr_accessor->type != cgltf_type_vec4) {
+            Log(LOG_WARN,
+                "error loading color attribute #%d, type %d in file %s (not "
+                "a vec4 of floats)",
+                ai, attribute.type, path);
+            model.status = E_CANNOT_LOAD_FILE;
+            return model;
+          }
+
+          UploadAttribute(mesh, 1, attribute, attr_accessor);
+        } else if (attribute.type == cgltf_attribute_type_texcoord) {
+          cgltf_accessor *attr_accessor = attribute.data;
+          if (attr_accessor->component_type != cgltf_component_type_r_32f ||
+              attr_accessor->type != cgltf_type_vec2) {
+            Log(LOG_WARN,
+                "error loading texcoord attribute #%d, type %d in file %s (not "
+                "a vec2 of floats)",
+                ai, attribute.type, path);
+            model.status = E_CANNOT_LOAD_FILE;
+            return model;
+          }
+
+          UploadAttribute(mesh, 2, attribute, attr_accessor);
+        } else if (attribute.type == cgltf_attribute_type_normal) {
+          cgltf_accessor *attr_accessor = attribute.data;
+          if (attr_accessor->component_type != cgltf_component_type_r_32f ||
+              attr_accessor->type != cgltf_type_vec3) {
+            Log(LOG_WARN,
+                "error loading normal attribute #%d, type %d in file %s (not a "
+                "vec3 of floats)",
+                ai, attribute.type, path);
+            model.status = E_CANNOT_LOAD_FILE;
+            return model;
+          }
+
+          UploadAttribute(mesh, 3, attribute, attr_accessor);
         } else {
-          Log(LOG_WARN, "ignoring attribute #%d in file %s (not supported)", ai,
-              path);
+          Log(LOG_WARN,
+              "ignoring attribute #%d ,type %d in file %s (not supported)", ai,
+              attribute.type, path);
         }
 
-        break;
+        // TODO(cedmundo): check if buffer is not the same for all attributes
+        // and post a warning then return an error.
       }
 
       // Load model indices
@@ -270,22 +317,18 @@ Model LoadModel(const char *path) {
   return model;
 }
 
-StatusCode UploadPositionAttribute(Mesh *mesh, cgltf_attribute attribute) {
-  cgltf_accessor *attr_accessor = attribute.data;
-  if (attr_accessor->component_type != cgltf_component_type_r_32f ||
-      attr_accessor->type != cgltf_type_vec3) {
-    return E_CANNOT_LOAD_FILE;
-  }
-
+void UploadAttribute(Mesh *mesh, int index, cgltf_attribute attribute,
+                     cgltf_accessor *attr_accessor) {
   cgltf_buffer_view *attr_view = attr_accessor->buffer_view;
   cgltf_buffer *attr_buf = attr_view->buffer;
 
-  glBindBuffer(GL_ARRAY_BUFFER, mesh->vbo);
-  glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)attr_view->size,
-               attr_buf->data + attr_view->offset, GL_STATIC_DRAW);
-  glEnableVertexAttribArray(0);
-  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), 0);
-  return SUCCESS;
+  char *buffer_start = attr_buf->data + attr_view->offset;
+  glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)attr_view->size, buffer_start,
+               GL_STATIC_DRAW);
+  glEnableVertexAttribArray(index);
+  glVertexAttribPointer(
+      index, (GLsizei)cgltf_num_components(attr_accessor->type), GL_FLOAT,
+      GL_FALSE, (GLsizei)attr_accessor->stride, NULL);
 }
 
 StatusCode UploadIndices(Mesh *mesh, cgltf_accessor *indices_accessor) {
